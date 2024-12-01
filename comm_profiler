@@ -1,0 +1,77 @@
+import numpy as np
+import torch
+import time
+from typing import List, Tuple
+import random
+
+def generate_large_cnf(num_clauses: int, num_vars: int) -> str:
+    """生成大规模的CNF公式字符串"""
+    cnf = []
+    for _ in range(num_clauses):
+        clause = []
+        for _ in range(3):  # 生成3-SAT
+            var = random.randint(1, num_vars)
+            neg = random.choice(['-', ''])
+            clause.append(f"{neg}x{var}")
+        cnf.append(f"({' ∨ '.join(clause)})")
+    return ' ∧ '.join(cnf)
+
+def simulate_gpu_computation(tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
+    """模拟GPU上的神经网络计算"""
+    # 假设进行一些矩阵运算来模拟神经网络推理
+    result = torch.matmul(tensor, tensor.T)
+    return torch.mean(result, dim=1)
+
+def benchmark_communication(sizes: List[int], 
+                          num_vars: int,
+                          num_iterations: int = 100) -> List[Tuple[int, float, float]]:
+    """测试不同大小输入的CPU-GPU通信时间"""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    results = []
+    
+    for size in sizes:
+        total_to_gpu = 0
+        total_from_gpu = 0
+        
+        for _ in range(num_iterations):
+            # 生成输入数据
+            cnf = generate_large_cnf(size, num_vars)
+            
+            # 测试CPU到GPU的传输时间
+            start = time.perf_counter()
+            tensor = torch.randn(size, 512).to(device)  # 假设每个子句编码为512维向量
+            torch.cuda.synchronize()
+            to_gpu_time = time.perf_counter() - start
+            
+            # 模拟GPU计算
+            result = simulate_gpu_computation(tensor, device)
+            
+            # 测试GPU到CPU的传输时间
+            start = time.perf_counter()
+            result = result.cpu()
+            torch.cuda.synchronize()
+            from_gpu_time = time.perf_counter() - start
+            
+            total_to_gpu += to_gpu_time
+            total_from_gpu += from_gpu_time
+        
+        avg_to_gpu = total_to_gpu / num_iterations
+        avg_from_gpu = total_from_gpu / num_iterations
+        results.append((size, avg_to_gpu, avg_from_gpu))
+    
+    return results
+
+def main():
+    # 测试不同规模的输入
+    sizes = [1000, 5000, 10000, 50000, 100000]
+    num_vars = 1000
+    results = benchmark_communication(sizes, num_vars)
+    
+    print("\nCPU-GPU通信时间测试结果:")
+    print("子句数量\tCPU->GPU (ms)\tGPU->CPU (ms)\t总时间 (ms)")
+    print("-" * 60)
+    for size, to_gpu, from_gpu in results:
+        print(f"{size:,}\t{to_gpu*1000:.2f}\t\t{from_gpu*1000:.2f}\t\t{(to_gpu+from_gpu)*1000:.2f}")
+
+if __name__ == "__main__":
+    main()
